@@ -3,18 +3,14 @@ version: 0.2
 env:
   variables:
     AWS_DEFAULT_REGION: eu-north-1
-    # ECR repo URI (no tag)
     ECR_REPO: 085494094875.dkr.ecr.eu-north-1.amazonaws.com/docker-registry
-    # folder that contains your pom.xml, Dockerfile, etc.
     PROJECT_DIR: docker
-    # MUST match the container name in your ECS task definition
-    CONTAINER_NAME: docker-registry
+    CONTAINER_NAME: docker-registry   # MUST match container name in ECS task def
 
 phases:
   install:
     commands:
-      - set -euo pipefail
-      - echo "Using CodeBuild standard image; docker + maven should be available"
+      - echo "Starting build in CodeBuild image"
       - mvn -v || true
 
   pre_build:
@@ -27,28 +23,27 @@ phases:
 
   build:
     commands:
-      - echo "Building application JAR..."
+      - echo "Build app JAR"
       - cd "$PROJECT_DIR"
-      - ls -la
-      - test -f pom.xml
       - mvn -q -DskipTests clean package
-      - echo "Building Docker image..."
+      - echo "Build Docker image"
       - docker build -t "$ECR_REPO:$IMAGE_TAG" .
       - docker tag  "$ECR_REPO:$IMAGE_TAG" "$ECR_REPO:latest"
 
   post_build:
     commands:
-      - echo "Pushing images to ECR..."
+      - echo "Push image(s)"
       - docker push "$ECR_REPO:$IMAGE_TAG"
       - docker push "$ECR_REPO:latest"
-      # return to the source root so imagedefinitions.json lands at the artifact root
+      # IMPORTANT: return to SOURCE ROOT before writing imagedefinitions.json
       - cd "$CODEBUILD_SRC_DIR"
       - printf '[{"name":"%s","imageUri":"%s"}]' "$CONTAINER_NAME" "$ECR_REPO:$IMAGE_TAG" > imagedefinitions.json
-      - echo "Generated imagedefinitions.json:"
+      - echo "imagedefinitions.json content:"
       - cat imagedefinitions.json
 
 artifacts:
   files:
     - imagedefinitions.json
-    # optional: publish the built jar if you want it as an artifact too
+    # (optional) keep jar too
     - docker/target/*.jar
+  discard-paths: yes        # <— forces files to be at the ZIP root for ECS
