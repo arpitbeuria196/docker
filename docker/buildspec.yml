@@ -4,20 +4,18 @@ env:
   variables:
     AWS_DEFAULT_REGION: eu-north-1
     ECR_REPO: 085494094875.dkr.ecr.eu-north-1.amazonaws.com/docker-registry
-    PROJECT_DIR: docker/docker    # <- your app folder inside the repo
+    PROJECT_DIR: docker/docker
 
 phases:
   install:
     commands:
-      - echo "Install Docker CLI if needed (CodeBuild standard Ubuntu images already have it)"
-      # If you're using a custom image, install docker cli here
+      - echo "Using CodeBuild standard image Docker CLI"
 
   pre_build:
     commands:
       - echo "Logging in to Amazon ECR..."
-      - aws ecr get-login-password --region $AWS_DEFAULT_REGION \
-        | docker login --username AWS --password-stdin $ECR_REPO
-      - COMMIT_SHA=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-7 || true)
+      - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "$ECR_REPO"
+      - COMMIT_SHA=$(echo "$CODEBUILD_RESOLVED_SOURCE_VERSION" | cut -c1-7 || true)
       - IMAGE_TAG=${COMMIT_SHA:-latest}
       - echo "IMAGE_TAG=$IMAGE_TAG"
 
@@ -27,16 +25,17 @@ phases:
       - cd "$PROJECT_DIR"
       - mvn -q -DskipTests clean package
       - echo "Build Docker image"
-      - docker build -t $ECR_REPO:$IMAGE_TAG .
-      - docker tag $ECR_REPO:$IMAGE_TAG $ECR_REPO:latest
+      - docker build -t "$ECR_REPO:$IMAGE_TAG" .
+      - docker tag "$ECR_REPO:$IMAGE_TAG" "$ECR_REPO:latest"
 
   post_build:
     commands:
       - echo "Push images"
-      - docker push $ECR_REPO:$IMAGE_TAG
-      - docker push $ECR_REPO:latest
-      # If you're using ECS in CodePipeline, output imagedefinitions.json:
+      - docker push "$ECR_REPO:$IMAGE_TAG"
+      - docker push "$ECR_REPO:latest"
+      # If deploying to ECS via CodePipeline, emit imagedefinitions.json
       - printf '[{"name":"app","imageUri":"%s"}]' "$ECR_REPO:$IMAGE_TAG" > imagedefinitions.json
+
 artifacts:
   files:
     - docker/docker/target/*.jar
