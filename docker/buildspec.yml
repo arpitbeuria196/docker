@@ -4,34 +4,40 @@ env:
   variables:
     AWS_DEFAULT_REGION: eu-north-1
     ECR_REPO: 085494094875.dkr.ecr.eu-north-1.amazonaws.com/docker-registry
-  git-credential-helper: yes
+    PROJECT_DIR: docker/docker    # <- your app folder inside the repo
 
 phases:
   install:
-    runtime-versions:
-      java: corretto17
     commands:
-      - echo "Install Docker CLI if not preinstalled"
+      - echo "Install Docker CLI if needed (CodeBuild standard Ubuntu images already have it)"
+      # If you're using a custom image, install docker cli here
+
   pre_build:
     commands:
       - echo "Logging in to Amazon ECR..."
-      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPO
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION \
+        | docker login --username AWS --password-stdin $ECR_REPO
       - COMMIT_SHA=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-7 || true)
       - IMAGE_TAG=${COMMIT_SHA:-latest}
+      - echo "IMAGE_TAG=$IMAGE_TAG"
+
   build:
     commands:
       - echo "Build JAR"
+      - cd "$PROJECT_DIR"
       - mvn -q -DskipTests clean package
       - echo "Build Docker image"
       - docker build -t $ECR_REPO:$IMAGE_TAG .
       - docker tag $ECR_REPO:$IMAGE_TAG $ECR_REPO:latest
+
   post_build:
     commands:
       - echo "Push images"
       - docker push $ECR_REPO:$IMAGE_TAG
       - docker push $ECR_REPO:latest
-      - echo "Write imagedefinitions.json for ECS Deploy action"
+      # If you're using ECS in CodePipeline, output imagedefinitions.json:
       - printf '[{"name":"app","imageUri":"%s"}]' "$ECR_REPO:$IMAGE_TAG" > imagedefinitions.json
 artifacts:
   files:
+    - docker/docker/target/*.jar
     - imagedefinitions.json
